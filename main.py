@@ -1,96 +1,100 @@
-import pandas as pd
+import csv
 import os
 import argparse
+from datetime import datetime
 
-# --- CSV-Datei laden ---
-def load_csv(filename):
-    try:
-        # CSV-Datei lesen
-        df = pd.read_csv(filename)
-        return df
-    except FileNotFoundError:
-        print(f"Die Datei {filename} wurde nicht gefunden.")
-        return None
-    except Exception as e:
-        print(f"Fehler beim Laden der CSV-Datei: {e}")
-        return None
+def process_csv(input_file, output_file):
+    # CSV-Datei einlesen
+    with open(input_file, mode='r', encoding='utf-8') as infile:
+        reader = csv.reader(infile)
+        headers = next(reader)  # Erste Zeile: Header
+        rows = list(reader)
 
-# --- Überprüfung der Spalten und Verarbeitung der Funding Fees ---
-def process_funding_fees(dataframe):
-    # Sicherstellen, dass alle relevanten Spalten vorhanden sind
-    required_columns = ["order", "date", "coin", "futures", "type", "sum", "fee"]
-    if not all(col in dataframe.columns for col in required_columns):
-        print(f"Die CSV-Datei enthält nicht die erwarteten Spalten: {', '.join(required_columns)}")
-        return None
+    # Spaltenindizes ermitteln
+    typ_idx = headers.index("Typ")
+    kauf_idx = headers.index("Kauf")
+    cur_kauf_idx = headers.index("Cur.")  # Erster "Cur." für Kauf
+    verkauf_idx = headers.index("Verkauf")
+    cur_verkauf_idx = headers.index("Cur.", cur_kauf_idx + 1)  # Zweiter "Cur." für Verkauf
+    gebuehr_idx = headers.index("Gebühr")
+    cur_gebuehr_idx = headers.index("Cur.", cur_verkauf_idx + 1)  # Dritter "Cur." für Gebuehr
+    boerse_idx = headers.index("Börse")
+    gruppe_idx = headers.index("Gruppe")
+    kommentar_idx = headers.index("Kommentar")
+    datum_idx = headers.index("Datum")
 
-    # Neue DataFrame für die aggregierten Funding Fees erstellen
-    aggregated_data = {}
-    remaining_transactions = []
-    conversion_log = []
+    # Ergebnis-Liste initialisieren
+    processed_rows = []
+    grouped_data_out = {}
+    grouped_data_in = {}
 
-    # Schleife über jede Zeile der DataFrame
-    for _, row in dataframe.iterrows():
-        # Datum ohne Uhrzeit extrahieren
-        date_only = pd.to_datetime(row["date"]).date()
+    for row in rows:
+        # Typ und Datum extrahieren
+        typ = row[typ_idx]
+        datum = datetime.strptime(row[datum_idx], '%d.%m.%Y %H:%M:%S').date()
 
-        # Nur Funding Fees verarbeiten
-        if row["type"] == "contract_margin_settle_fee":
-            
-            key = (date_only, row["futures"])
-
-            # Aggregiere Funding Fees
-            if key in aggregated_data:
-                aggregated_data[key]["sum"] += row["sum"]
-                aggregated_data[key]["fee"] += row["fee"]
-
-                # Füge zur Conversion-Log hinzu
-                conversion_log.append({
-                    "original_order": row["order"],
-                    "aggregated_order": aggregated_data[key]["order"],
-                    "date": date_only,
-                    "futures": row["futures"],
-                    "sum_added": row["sum"],
-                    "fee_added": row["fee"]
-                })
-            else:
-                aggregated_data[key] ={
-                "order": row["order"],
-                "date": date_only,
-                "coin": row["coin"],
-                "futures": row["futures"],
-                "type": "contract_margin_settle_fee",
-                "sum": row["sum"],
-                "fee": row["fee"]
+        if typ == 'Sonstige Gebühr':
+            # Gruppieren nach Datum
+            if datum not in grouped_data_out:
+                grouped_data_out[datum] = {
+                    typ_idx: typ,
+                    kauf_idx: '',
+                    cur_kauf_idx: '',
+                    verkauf_idx: float(row[verkauf_idx]),
+                    cur_verkauf_idx: row[cur_verkauf_idx],
+                    gebuehr_idx: '',
+                    boerse_idx: row[boerse_idx],
+                    gruppe_idx: row[gruppe_idx],
+                    kommentar_idx: row[kommentar_idx],
+                    datum_idx: datum.strftime('%d.%m.%Y 00:00:00'),
                 }
+            else:
+                # Verkauf aufaddieren
+                grouped_data_out[datum][verkauf_idx] += float(row[verkauf_idx])
 
-                # Initialer Log-Eintrag
-                conversion_log.append({
-                    "original_order": row["order"],
-                    "aggregated_order": row["order"],
-                    "date": date_only,
-                    "futures": row["futures"],
-                    "sum_added": row["sum"],
-                    "fee_added": row["fee"]
-                })
-            
+        elif type == 'Sonstige Einnahme':
+            if datum not in grouped_data_in:
+                grouped_data_in[datum] = {
+                    typ_idx: typ,
+                    kauf_idx: float(row[kauf_idx]),
+                    cur_kauf_idx: row[cur_kauf_idx],
+                    verkauf_idx: '',
+                    cur_verkauf_idx: '',
+                    gebuehr_idx: '',
+                    boerse_idx: row[boerse_idx],
+                    gruppe_idx: row[gruppe_idx],
+                    kommentar_idx: row[kommentar_idx],
+                    datum_idx: datum.strftime('%d.%m.%Y 00:00:00'),
+                }
+            else:
+                grouped_data_in[datum][kauf_idx] += float(row[kauf_idx])
+
         else:
-            # Andere Transaktionen beibehalten
-            remaining_transactions.append(row)
+            # row[datum_idx] = datum.strftime('%d.%m.%Y 00:00:00')  
+            processed_rows.append(row)
+
+    # Zusammengefasste "Sonstige Gebühr"-Daten hinzufügen
+    for datum, grouped_row_out in grouped_data_out.items():
+        new_row = [None] * len(headers)
+        for col_idx, value in grouped_row_out.items():
+            new_row[col_idx] = value
+        processed_rows.append(new_row)
     
-    # Aggregierte Daten und übrige Transaktionen in DataFrames konvertieren
-    aggregated_df = pd.DataFrame(aggregated_data.values())
-    transactions_df = pd.DataFrame(remaining_transactions)
-    conversion_df = pd.DataFrame(conversion_log)
+    for datum, grouped_row_in in grouped_data_in.items():
+        new_row = [None] * len(headers)
+        for col_idx, value in grouped_row_in.items():
+            new_row[col_idx] = value
+        processed_rows.append(new_row)
 
-    return transactions_df, aggregated_df, conversion_df
+    # Reihenfolge der Zeilen nach Datum absteigend sortieren
+    processed_rows.sort(key=lambda x: datetime.strptime(x[datum_idx], '%d.%m.%Y %H:%M:%S'), reverse=True)
 
-# --- Daten in CSV exportieren ---
-def save_to_csv(dataframe, filename="aggregated_funding_fees.csv"):
-    try:
-        dataframe.to_csv(filename, index=False)
-        print(f"Die aggregierte CSV-Datei wurde erfolgreich erstellt: {filename}")
-    except Exception as e:
-        print(f"Fehler beim Speichern der CSV-Datei: {e}")
+    # CSV-Datei schreiben
+    with open(output_file, mode='w', encoding='utf-8', newline='') as outfile:
+        writer = csv.writer(outfile)
+        writer.writerow(headers)
+        writer.writerows(processed_rows)
+
 
 
 if __name__ == "__main__":
@@ -102,21 +106,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     input_file = args.file_path
 
-    output_file_fees = "funding_fees.csv"
-    output_file_transactions = "transactions.csv"
-    output_file_conversion = "conversions.csv"
+    output_file = "output.csv"
     workspaceFolder = os.path.dirname(os.path.abspath(__file__))
 
-    # CSV laden
-    df = load_csv(os.path.join(workspaceFolder, input_file))
-    if df is not None:
-
-        # Daten verarbeiten
-        transactions_df, fees_df, conversion_df  = process_funding_fees(df)
-
-        if fees_df is not None:
-            save_to_csv(fees_df, os.path.join(workspaceFolder, output_file_fees))
-        if transactions_df is not None:
-            save_to_csv(transactions_df, os.path.join(workspaceFolder, output_file_transactions))
-        if conversion_df is not None:
-            save_to_csv(conversion_df, os.path.join(workspaceFolder, output_file_conversion))
+    # Aufruf der Funktion
+    process_csv(
+        os.path.join(workspaceFolder, input_file),
+        os.path.join(workspaceFolder, output_file),
+     )
