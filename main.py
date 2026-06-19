@@ -30,8 +30,13 @@ def process_csv(input_file, output_file):
     datum_idx = headers.index("Date")
 
     processed_rows = []
-    grouped_data_out = {}  # Other Fee pro Tag
-    grouped_data_in = {}   # Other Income pro Tag
+    grouped_data_out = {}   # Other Fee: key = datum
+    grouped_data_in = {}    # Other Income: key = datum
+    grouped_interest = {}   # Interest Income: key = (datum, währung)
+    grouped_bonus = {}      # Reward / Bonus: key = (datum, währung)
+
+    # Typen die zusammengefasst werden
+    GROUPED_TYPES = {'Other Fee', 'Other Income', 'Interest Income', 'Reward / Bonus'}
 
     for row in rows:
         typ = row[typ_idx]
@@ -75,20 +80,57 @@ def process_csv(input_file, output_file):
             else:
                 grouped_data_in[datum][kauf_idx] += buy_val
 
+        elif typ == 'Interest Income':
+            buy_val = float(row[kauf_idx]) if row[kauf_idx] else 0.0
+            currency = row[cur_kauf_idx]
+            key = (datum, currency)
+            if key not in grouped_interest:
+                grouped_interest[key] = {
+                    typ_idx: typ,
+                    kauf_idx: buy_val,
+                    cur_kauf_idx: currency,
+                    verkauf_idx: '',
+                    cur_verkauf_idx: '',
+                    gebuehr_idx: '',
+                    cur_gebuehr_idx: '',
+                    boerse_idx: row[boerse_idx],
+                    gruppe_idx: row[gruppe_idx],
+                    kommentar_idx: row[kommentar_idx],
+                    datum_idx: datum.strftime('%d.%m.%Y 00:00:00'),
+                }
+            else:
+                grouped_interest[key][kauf_idx] += buy_val
+
+        elif typ == 'Reward / Bonus':
+            buy_val = float(row[kauf_idx]) if row[kauf_idx] else 0.0
+            currency = row[cur_kauf_idx]
+            key = (datum, currency)
+            if key not in grouped_bonus:
+                grouped_bonus[key] = {
+                    typ_idx: typ,
+                    kauf_idx: buy_val,
+                    cur_kauf_idx: currency,
+                    verkauf_idx: '',
+                    cur_verkauf_idx: '',
+                    gebuehr_idx: '',
+                    cur_gebuehr_idx: '',
+                    boerse_idx: row[boerse_idx],
+                    gruppe_idx: row[gruppe_idx],
+                    kommentar_idx: row[kommentar_idx],
+                    datum_idx: datum.strftime('%d.%m.%Y 00:00:00'),
+                }
+            else:
+                grouped_bonus[key][kauf_idx] += buy_val
+
         else:
             processed_rows.append(row)
 
-    for datum, grouped_row in grouped_data_out.items():
-        new_row = [''] * len(headers)
-        for col_idx, value in grouped_row.items():
-            new_row[col_idx] = value
-        processed_rows.append(new_row)
-
-    for datum, grouped_row in grouped_data_in.items():
-        new_row = [''] * len(headers)
-        for col_idx, value in grouped_row.items():
-            new_row[col_idx] = value
-        processed_rows.append(new_row)
+    for grouped in [grouped_data_out, grouped_data_in, grouped_interest, grouped_bonus]:
+        for key, grouped_row in grouped.items():
+            new_row = [''] * len(headers)
+            for col_idx, value in grouped_row.items():
+                new_row[col_idx] = value
+            processed_rows.append(new_row)
 
     processed_rows.sort(
         key=lambda x: parse_date(x[datum_idx]),
