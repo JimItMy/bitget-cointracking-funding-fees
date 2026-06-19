@@ -9,7 +9,6 @@ def process_csv(input_file, output_file):
         headers = next(reader)
         rows = list(reader)
 
-    # Spaltenindizes ermitteln
     typ_idx = headers.index("Type")
     kauf_idx = headers.index("Buy")
     cur_kauf_idx = headers.index("Cur.")
@@ -23,12 +22,12 @@ def process_csv(input_file, output_file):
     datum_idx = headers.index("Date")
 
     processed_rows = []
-    grouped_data_out = {}  # Other Fee pro Tag
-    grouped_data_in = {}   # Other Income pro Tag
+    grouped_data_out = {}
+    grouped_data_in = {}
 
     for row in rows:
         typ = row[typ_idx]
-        datum = datetime.strptime(row[datum_idx], '%d.%m.%Y %H:%M:%S').date()
+        datum = datetime.strptime(row[datum_idx], '%Y-%m-%d %H:%M:%S').date()
 
         if typ == 'Other Fee':
             sell_val = float(row[verkauf_idx]) if row[verkauf_idx] else 0.0
@@ -44,7 +43,7 @@ def process_csv(input_file, output_file):
                     boerse_idx: row[boerse_idx],
                     gruppe_idx: row[gruppe_idx],
                     kommentar_idx: row[kommentar_idx],
-                    datum_idx: datum.strftime('%d.%m.%Y 00:00:00'),
+                    datum_idx: datum.strftime('%Y-%m-%d 00:00:00'),
                 }
             else:
                 grouped_data_out[datum][verkauf_idx] += sell_val
@@ -63,7 +62,7 @@ def process_csv(input_file, output_file):
                     boerse_idx: row[boerse_idx],
                     gruppe_idx: row[gruppe_idx],
                     kommentar_idx: row[kommentar_idx],
-                    datum_idx: datum.strftime('%d.%m.%Y 00:00:00'),
+                    datum_idx: datum.strftime('%Y-%m-%d 00:00:00'),
                 }
             else:
                 grouped_data_in[datum][kauf_idx] += buy_val
@@ -83,9 +82,8 @@ def process_csv(input_file, output_file):
             new_row[col_idx] = value
         processed_rows.append(new_row)
 
-    # Nach Datum absteigend sortieren
     processed_rows.sort(
-        key=lambda x: datetime.strptime(x[datum_idx], '%d.%m.%Y %H:%M:%S'),
+        key=lambda x: datetime.strptime(x[datum_idx], '%Y-%m-%d %H:%M:%S'),
         reverse=True
     )
 
