@@ -3,6 +3,14 @@ import os
 import argparse
 from datetime import datetime
 
+def parse_date(date_str):
+    for fmt in ('%d.%m.%Y %H:%M:%S', '%Y-%m-%d %H:%M:%S'):
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"Unbekanntes Datumsformat: {date_str}")
+
 def process_csv(input_file, output_file):
     with open(input_file, mode='r', encoding='utf-8') as infile:
         reader = csv.reader(infile)
@@ -22,12 +30,12 @@ def process_csv(input_file, output_file):
     datum_idx = headers.index("Date")
 
     processed_rows = []
-    grouped_data_out = {}
-    grouped_data_in = {}
+    grouped_data_out = {}  # Other Fee pro Tag
+    grouped_data_in = {}   # Other Income pro Tag
 
     for row in rows:
         typ = row[typ_idx]
-        datum = datetime.strptime(row[datum_idx], '%Y-%m-%d %H:%M:%S').date()
+        datum = parse_date(row[datum_idx]).date()
 
         if typ == 'Other Fee':
             sell_val = float(row[verkauf_idx]) if row[verkauf_idx] else 0.0
@@ -37,13 +45,13 @@ def process_csv(input_file, output_file):
                     kauf_idx: '',
                     cur_kauf_idx: '',
                     verkauf_idx: sell_val,
-                    cur_verkauf_idx: row[cur_verkauf_idx],
+                    cur_verkauf_idx: 'USDT',
                     gebuehr_idx: '',
                     cur_gebuehr_idx: '',
                     boerse_idx: row[boerse_idx],
                     gruppe_idx: row[gruppe_idx],
                     kommentar_idx: row[kommentar_idx],
-                    datum_idx: datum.strftime('%Y-%m-%d 00:00:00'),
+                    datum_idx: datum.strftime('%d.%m.%Y 00:00:00'),
                 }
             else:
                 grouped_data_out[datum][verkauf_idx] += sell_val
@@ -54,7 +62,7 @@ def process_csv(input_file, output_file):
                 grouped_data_in[datum] = {
                     typ_idx: typ,
                     kauf_idx: buy_val,
-                    cur_kauf_idx: row[cur_kauf_idx],
+                    cur_kauf_idx: 'USDT',
                     verkauf_idx: '',
                     cur_verkauf_idx: '',
                     gebuehr_idx: '',
@@ -62,7 +70,7 @@ def process_csv(input_file, output_file):
                     boerse_idx: row[boerse_idx],
                     gruppe_idx: row[gruppe_idx],
                     kommentar_idx: row[kommentar_idx],
-                    datum_idx: datum.strftime('%Y-%m-%d 00:00:00'),
+                    datum_idx: datum.strftime('%d.%m.%Y 00:00:00'),
                 }
             else:
                 grouped_data_in[datum][kauf_idx] += buy_val
@@ -83,7 +91,7 @@ def process_csv(input_file, output_file):
         processed_rows.append(new_row)
 
     processed_rows.sort(
-        key=lambda x: datetime.strptime(x[datum_idx], '%Y-%m-%d %H:%M:%S'),
+        key=lambda x: parse_date(x[datum_idx]),
         reverse=True
     )
 
